@@ -14,6 +14,11 @@ float lastHumidityPct = NAN;
 unsigned long lastSensorReadMs = 0;
 const unsigned long SENSOR_READ_INTERVAL_MS = 2000;
 
+unsigned long lastWiFiReconnectMs = 0;
+const unsigned long WIFI_RECONNECT_BACKOFF_MS = 5000;
+const unsigned long WIFI_RECONNECT_MAX_BACKOFF_MS = 30000;
+int wifiReconnectCount = 0;
+
 void sendText(WiFiClient &client, int code, const char* body) {
   const char* status = (code==200 ? "OK" : (code==404 ? "Not Found" : "Service Unavailable"));
   client.print("HTTP/1.1 ");
@@ -56,28 +61,66 @@ String normalizePath(String path) {
 
 void setup() {
   Serial.begin(115200);
-
+  delay(500);
+  
+  Serial.println("\n[SETUP] Kitchensensor starting...");
+  Serial.print("[SETUP] Connecting to WiFi: ");
+  Serial.println(ssid);
+  
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
   WiFi.begin(ssid, password);
+  
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) { // kein endlos loop [8](https://forum.arduino.cc/t/implement-wifi-connecting-timeout-on-esp32/645718)
+  while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
     delay(250);
     Serial.print(".");
   }
 
   Serial.println();
-  Serial.print("WiFi status: "); Serial.println(WiFi.status());
-  Serial.print("IP: "); Serial.println(WiFi.localIP());
+  Serial.print("[SETUP] WiFi status: ");
+  Serial.println(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "FAILED");
+  Serial.print("[SETUP] IP: ");
+  Serial.println(WiFi.localIP());
 
   server.begin();
+  Serial.println("[SETUP] HTTP server started on port 80");
+  
   dht.setup(DHTPIN, DHTesp::DHT11);
+  Serial.println("[SETUP] DHT11 sensor initialized");
+  
   updateSensorCache();
+  lastWiFiReconnectMs = millis();
+  Serial.println("[SETUP] Ready to serve requests\n");
 }
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
-    WiFi.reconnect();
-    delay(100);
+    unsigned long now = millis();
+    unsigned long timeSinceLastAttempt = now - lastWiFiReconnectMs;
+    unsigned long backoffMs = min(
+      (unsigned long)(WIFI_RECONNECT_BACKOFF_MS * (1 << wifiReconnectCount)),
+      WIFI_RECONNECT_MAX_BACKOFF_MS
+    );
+
+    if (timeSinceLastAttempt >= backoffMs) {
+      wifiReconnectCount++;
+      Serial.print("[WiFi] Reconnect attempt #");
+      Serial.print(wifiReconnectCount);
+      Serial.print(" (backoff: ");
+      Serial.print(backoffMs);
+      Serial.println(" ms)");
+      
+      WiFi.reconnect();
+      lastWiFiReconnectMs = now;
+    }
     return;
+  }
+  
+  if (wifiReconnectCount > 0) {
+    Serial.println("[WiFi] Reconnected successfully");
+    wifiReconnectCount = 0;
   }
 
   if (millis() - lastSensorReadMs >= SENSOR_READ_INTERVAL_MS) {
