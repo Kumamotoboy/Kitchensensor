@@ -47,9 +47,10 @@ const char* password = "YOUR PASSWORD";   // WiFi password
 
 ## Code Overview
 
-- Initializes WiFi with a 15-second timeout.
-- Sets up the DHT11 sensor on GPIO 4.
-- Reads the sensor every 2000 ms (`SENSOR_READ_INTERVAL_MS`).
-- Caches the last valid temperature and humidity values.
-- Serves HTTP requests on port 80 with normalized path parsing.
-- Returns 200 (OK) with the reading, 503 (Service Unavailable) if no valid reading has been cached yet, or ignores malformed requests.
+- **WiFi Initialization:** Connects with a 15-second timeout; on failure, uses a growing backoff (5s → 10s → 20s → max 30s) for reconnect attempts to avoid network thrashing.
+- **WiFi Stability:** Enables auto-reconnect mode (`WiFi.setAutoReconnect`) for background recovery.
+- **Sensor Reading:** Reads the DHT11 sensor every 2000 ms (`SENSOR_READ_INTERVAL_MS`) and caches temperature and humidity values.
+- **Caching:** Returns the last valid reading even if a sensor read fails, ensuring stable HTTP responses.
+- **HTTP Server:** Serves requests on port 80 with robust path parsing (handles query strings, trailing slashes, non-GET requests).
+- **Status Codes:** Returns 200 (OK) with the reading, 503 (Service Unavailable) if no valid reading has been cached yet.
+- **Serial Logging:** Outputs startup info, WiFi status, reconnect attempts with backoff delays (115200 baud).
